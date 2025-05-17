@@ -1,0 +1,44 @@
+Imagine that you meet with a company, we could call it ABC, is planning a product. You can choose any industry that you are particularly familiar with as this customer’s business. 
+You and your peers, as the Account Team, visited the customer’s office for the first time. During this visit, you learned the core knowledge of the product and identified the customer's needs.
+The core feature and process of the product are as below:
+The core feature is “global urban air quality prediction”.
+For US cities, use 2 publicly available scientific datasets as source: 1) National Oceanic and Atmospheric Administration: Global Surface Summary of the Day, 2) OpenAQ. You can get detailed information from “Concepts and knowledge” section.
+Use multiple machine learning (ML) models to prediction. You can get detailed information from “Concepts and knowledge” section.
+The output of the model is "AQI Forecast for the next 1 days, 24-hour scale". For US Cities, follow U.S.AQI definition set by U.S. Environmental Protection Agency (Hereafter referred to as EPA). You can get detailed information from “Concepts and knowledge” section.
+There are two types of end users: enterprise and individual.
+Data scientists are responsible for the datasets and models.
+The R&D team is responsible for the front and back ends.
+The content for individual End-User is a picture that reflects the characteristics of the city, the theme of the day, AQI information and health information.
+At present, the product is in its infancy and the team responsible for it is small. Team members want to focus on the business, not spend a lot of time and energy maintaining the infrastructure. Their next plan, related to information technology, are as below:
+Scaling to meet continuous increase of data.
+A web-based, integrated development environment (IDE) where you can perform all ML development steps.
+Use AutoML to evaluate and compare the models.
+Use GenAI to generate the picture for individual End-User.
+Concepts and knowledge:
+National Oceanic and Atmospheric Administration (NOAA): Global Surface Summary of the Day
+Global Surface Summary of the Day is derived from The Integrated Surface Hourly (ISH) dataset. The ISH dataset includes global data obtained from the USAF Climatology Center, located in the Federal Climate Complex with NCDC.
+Dataset URL: https://registry.opendata.aws/noaa-gsod/ 
+License: Open Data. There are no restrictions on the use of this data
+Documentation: http://www.ncdc.noaa.gov/ 
+OpenAQ
+Global, aggregated physical air quality data from public data sources provided by government, research-grade and other sources. These awesome groups do the hard work of measuring these data and publicly sharing them, and our community makes them more universally accessible to both humans and machines.
+Dataset URL: https://registry.opendata.aws/openaq/ 
+License: CC BY 4.0
+Documentation: https://openaq.org
+The relationship between weather and air quality
+The information comes directly from the United States Environmental Protection Agency (EPA):
+The weather can have a significant impact on air quality since different aspects of the weather affect the amounts of ozone and particulates that are present in a specific area. Sunshine, rain, higher temperatures, wind speed, air turbulence, and mixing depths all affect pollutant concentrations.
+Sunshine can cause some pollutants to undergo chemical reactions, resulting in the development of smog
+Higher air temperatures can speed up chemical reactions in the air
+Rain typically results in less pollution since it washes away particulate matter and can also wash out pollutants that are dissolvable
+Wind speed, air turbulence, and mixing depth all affect how pollutants disperse, or spread out from an area
+The weather dataset, Global Surface Summary of the Day from NOAA, contains a number of the above-mentioned attributes.  Data scientists need to merge the weather data with air quality data from OpenAQ for a given location.
+U.S.AQI
+Millions of people live in areas where air pollution can cause serious health problems. Local air quality can affect our daily lives. Like the weather, it can change from day to day. EPA developed the Air Quality Index, or AQI, to make information available about the health effects of the five most common air pollutants, and how to avoid those effects.
+URL: https://www.airnow.gov/aqi/aqi-basics/
+How is the AQI calculated?
+URL: https://document.airnow.gov/technical-assistance-document-for-the-reporting-of-daily-air-quailty.pdf
+AutoGluon
+A Python library for AutoML, you can use it to build machine learning (ML) models. Note: including this library, you can choose any method to build and evaluate your models.
+URL: https://auto.gluon.ai/
+During the visit, both you and the team leader agreed to prepare a prototype within a week, and you will demonstrate it to the data scientists and R&D team. The team leader emphasized that you would only have one opportunity, as they must decide the day after your demonstration.
