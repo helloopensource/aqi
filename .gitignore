@@ -4,3 +4,4 @@ aqi_prediction/data
 experiments/.env
 experiments/data
 experiment/.venv
+aqi_prediction_fe/node_modules

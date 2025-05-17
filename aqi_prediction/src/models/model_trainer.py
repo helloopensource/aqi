@@ -239,8 +239,8 @@ class ModelTrainer:
                 "scenario": self.scenario.name,
                 "target": self.target_label,
                 "path": self.model_path,
-                "problem_type": predictor.problem_type,
-                "eval_metric": predictor.eval_metric,
+                "problem_type": str(predictor.problem_type),
+                "eval_metric": str(predictor.eval_metric),
                 "features": predictor.features()
             }
             
@@ -261,7 +261,7 @@ class ModelTrainer:
             
             # Try to get leaderboard
             try:
-                model_info["best_model"] = predictor.get_model_best()
+                model_info["best_model"] = str(predictor.get_model_best())
             except Exception as e:
                 logger.warning(f"Could not get best model: {str(e)}")
             

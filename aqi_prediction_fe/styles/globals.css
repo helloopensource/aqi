@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+  min-height: 100vh;
+}
+
+.aqi-gauge {
+  width: 200px;
+  height: 200px;
+  margin: 0 auto;
+  position: relative;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.aqi-needle {
+  position: absolute;
+  width: 4px;
+  height: 90px;
+  background-color: #333;
+  left: 50%;
+  bottom: 50%;
+  transform-origin: bottom;
+  transform: translateX(-50%) rotate(0deg);
+  z-index: 10;
+  transition: transform 0.5s ease-out;
+}
+
+.aqi-needle-cap {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #333;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 11;
+}
+
+.category-label {
+  font-weight: bold;
+  font-size: 1.5rem;
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.city-image {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
+}
+
+.city-image:hover {
+  transform: scale(1.02);
+}
+
+.aqi-card {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.aqi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.health-info {
+  border-left: 4px solid;
+  padding-left: 1rem;
+  margin-top: 1rem;
+}
+
+.health-info.good {
+  border-color: var(--aqi-good);
+}
+
+.health-info.moderate {
+  border-color: var(--aqi-moderate);
+}
+
+.health-info.sensitive {
+  border-color: var(--aqi-sensitive);
+}
+
+.health-info.unhealthy {
+  border-color: var(--aqi-unhealthy);
+}
+
+.health-info.very-unhealthy {
+  border-color: var(--aqi-very-unhealthy);
+}
+
+.health-info.hazardous {
+  border-color: var(--aqi-hazardous);
+} 

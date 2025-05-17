@@ -161,10 +161,10 @@ async def predict(request: PredictionRequest):
     }
     ```
     """
-    if request.scenario not in app.aq_scenarios:
-        raise HTTPException(status_code=404, detail=f"Scenario '{request.scenario}' not found")
+    if request.scenario_name not in app.aq_scenarios:
+        raise HTTPException(status_code=404, detail=f"Scenario '{request.scenario_name}' not found")
     
-    scenario = app.aq_scenarios[request.scenario]
+    scenario = app.aq_scenarios[request.scenario_name]
     trainer = ModelTrainer(scenario, app.ml_target_label)
     
     # Check if model exists
@@ -177,13 +177,25 @@ async def predict(request: PredictionRequest):
         # Create a DataFrame with the weather data
         data = pd.DataFrame([request.weather_data])
         
-        # The model might expect categorical features with specific dtypes
-        features_info = predictor.feature_metadata.get_type_map_raw()
-        
-        # Convert categorical columns if needed
-        for feature, dtype in features_info.items():
-            if feature in data.columns and 'category' in str(dtype).lower():
-                data[feature] = data[feature].astype('category')
+        # Handle feature types in a more robust way
+        try:
+            # Different versions of AutoGluon have different ways of accessing feature metadata
+            if hasattr(predictor, 'feature_metadata') and hasattr(predictor.feature_metadata, 'get_type_map_raw'):
+                features_info = predictor.feature_metadata.get_type_map_raw()
+                # Convert categorical columns
+                for feature, dtype in features_info.items():
+                    if feature in data.columns and 'category' in str(dtype).lower():
+                        data[feature] = data[feature].astype('category')
+            elif hasattr(predictor, 'feature_metadata') and hasattr(predictor.feature_metadata, 'type_map_raw'):
+                features_info = predictor.feature_metadata.type_map_raw
+                # Convert categorical columns
+                for feature, dtype in features_info.items():
+                    if feature in data.columns and 'category' in str(dtype).lower():
+                        data[feature] = data[feature].astype('category')
+            else:
+                logger.warning("Could not determine feature types, continuing with raw features")
+        except Exception as e:
+            logger.warning(f"Error handling feature types: {str(e)}. Continuing with raw features.")
         
         # Make prediction
         result = trainer.predict(data)
@@ -198,43 +210,59 @@ async def predict(request: PredictionRequest):
             probability = float(result["probability_unhealthy"].iloc[0])
         
         # Calculate AQI value based on probability and parameter
-        # This is a simplified example - in a real system you would need to map predicted probabilities to concentrations
-        # Here we use a simple mapping where probability linearly corresponds to the concentration range
         param_name = scenario.aq_param_target.name
         
-        # Simplified approach for demo: derive a concentration estimate from probability
-        # In real application, you would predict the actual concentration
+        # Simplified approach: derive a concentration estimate from probability
+        aqi_value = None
+        category = None
+        
         if probability is not None:
+            # Calculate a more reasonable concentration based on the probability
+            # Use actual unhealthy thresholds from the config
             if param_name == "pm25":
-                # Map probability to a concentration range from 0-100 µg/m³
-                estimated_conc = probability * 100
+                # For PM2.5, the unhealthy threshold is around 35.5 µg/m³
+                # Map probability to a more reasonable concentration range
+                unhealthy_threshold = scenario.unhealthy_threshold
+                if is_unhealthy_pred:
+                    # If predicted unhealthy, concentration should be above threshold
+                    estimated_conc = unhealthy_threshold + (probability * 50)
+                else:
+                    # If predicted healthy, concentration should be below threshold
+                    estimated_conc = probability * unhealthy_threshold * 0.8
             elif param_name == "pm10":
-                # Map probability to a concentration range from 0-300 µg/m³
-                estimated_conc = probability * 300
+                # For PM10, the unhealthy threshold is around 155 µg/m³
+                unhealthy_threshold = scenario.unhealthy_threshold
+                if is_unhealthy_pred:
+                    # If predicted unhealthy, concentration should be above threshold
+                    estimated_conc = unhealthy_threshold + (probability * 100)
+                else:
+                    # If predicted healthy, concentration should be below threshold
+                    estimated_conc = probability * unhealthy_threshold * 0.8
             else:
-                # Default estimate
-                estimated_conc = 0
-                
+                # Default conservative estimate
+                estimated_conc = probability * 20
+            
+            # Ensure logical consistency - cap maximum concentration if not unhealthy
+            if not is_unhealthy_pred and estimated_conc > scenario.unhealthy_threshold:
+                estimated_conc = scenario.unhealthy_threshold * 0.9
+            
             # Calculate AQI
-            aqi_value, category = calculate_aqi(estimated_conc, param_name)
-        else:
-            aqi_value = None
-            category = None
+            aqi_value, category_info = calculate_aqi(estimated_conc, param_name)
         
-        return PredictionResponse(
-            scenario=scenario.name,
-            date=request.date,
-            is_unhealthy=is_unhealthy_pred,
-            probability=probability,
-            aqi_value=aqi_value,
-            category=category["name"] if category else None,
-            health_implications=category["health_implications"] if category else None,
-            prediction_time=datetime.now()
-        )
-        
+        return {
+            "scenario": scenario.name,
+            "date": request.prediction_date,  # Use prediction_date (mapped from 'date' in JSON)
+            "is_unhealthy": is_unhealthy_pred,
+            "probability": probability,
+            "aqi_value": aqi_value,
+            "category": category_info["name"] if category_info else None,
+            "health_implications": category_info["health_implications"] if category_info else None,
+            "prediction_time": datetime.now()
+        }
+    
     except Exception as e:
         logger.error(f"Error during prediction: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error during prediction: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/train/{scenario_name}", response_model=ModelInfoResponse, tags=["Training"])

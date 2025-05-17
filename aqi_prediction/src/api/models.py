@@ -46,9 +46,13 @@ class ErrorResponse(BaseModel):
 
 class PredictionRequest(BaseModel):
     """Request model for making predictions."""
-    scenario: str = Field(..., description="Name of the scenario to use")
-    date: date = Field(..., description="Date for prediction")
-    weather_data: Dict[str, float] = Field(..., description="Weather data for prediction")
+    scenario_name: str = Field(..., description="Name of the scenario to use", alias="scenario")
+    prediction_date: date = Field(..., description="Date for prediction", alias="date")
+    weather_data: Dict[str, Union[float, str]] = Field(..., description="Weather data for prediction")
+
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
 
 
 class PredictionResponse(BaseModel):

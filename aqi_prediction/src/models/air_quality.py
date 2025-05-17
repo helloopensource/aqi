@@ -230,6 +230,24 @@ def get_default_scenarios() -> Dict[str, AQScenario]:
     )
     la.update_noaa_station_coords(33.9381, -118.3889)  # LAX Airport coordinates
     scenarios[la.name] = la
+
+    # Los Angeles - PM10
+    la_pm10 = AQScenario(
+        location="los-angeles",
+        noaa_station_id="72295023174",
+        aq_param_target=params["pm10"]
+    )
+    la_pm10.update_noaa_station_coords(33.9381, -118.3889)  # LAX Airport coordinates
+    scenarios[la_pm10.name] = la_pm10
+
+    # Los Angeles - O3
+    la_o3 = AQScenario(
+        location="los-angeles",
+        noaa_station_id="72295023174",
+        aq_param_target=params["o3"]
+    )
+    la_o3.update_noaa_station_coords(33.9381, -118.3889)  # LAX Airport coordinates
+    scenarios[la_o3.name] = la_o3
     
     # San Francisco - PM2.5
     sf = AQScenario(
@@ -240,6 +258,24 @@ def get_default_scenarios() -> Dict[str, AQScenario]:
     sf.update_noaa_station_coords(37.6213, -122.3790)  # SFO Airport coordinates
     scenarios[sf.name] = sf
     
+    # San Francisco - PM10
+    sf_pm10 = AQScenario(
+        location="san-francisco",
+        noaa_station_id="72494023234",
+        aq_param_target=params["pm10"]
+    )
+    sf_pm10.update_noaa_station_coords(37.6213, -122.3790)  # SFO Airport coordinates
+    scenarios[sf_pm10.name] = sf_pm10
+    
+    # San Francisco - O3
+    sf_o3 = AQScenario(
+        location="san-francisco",
+        noaa_station_id="72494023234",
+        aq_param_target=params["o3"]
+    )
+    sf_o3.update_noaa_station_coords(37.6213, -122.3790)  # SFO Airport coordinates
+    scenarios[sf_o3.name] = sf_o3
+    
     # New York - PM2.5
     nyc = AQScenario(
         location="new-york",
@@ -249,6 +285,24 @@ def get_default_scenarios() -> Dict[str, AQScenario]:
     nyc.update_noaa_station_coords(40.7128, -74.0060)  # NYC coordinates
     scenarios[nyc.name] = nyc
     
+    # New York - PM10
+    nyc_pm10 = AQScenario(
+        location="new-york",
+        noaa_station_id="72503014732",
+        aq_param_target=params["pm10"]
+    )
+    nyc_pm10.update_noaa_station_coords(40.7128, -74.0060)  # NYC coordinates
+    scenarios[nyc_pm10.name] = nyc_pm10
+
+    # New York - O3
+    nyc_o3 = AQScenario(
+        location="new-york",
+        noaa_station_id="72503014732",
+        aq_param_target=params["o3"]
+    )
+    nyc_o3.update_noaa_station_coords(40.7128, -74.0060)  # NYC coordinates
+    scenarios[nyc_o3.name] = nyc_o3
+    
     # Chicago - PM2.5
     chicago = AQScenario(
         location="chicago",
@@ -257,5 +311,23 @@ def get_default_scenarios() -> Dict[str, AQScenario]:
     )
     chicago.update_noaa_station_coords(41.8781, -87.6298)  # Chicago coordinates
     scenarios[chicago.name] = chicago
+    
+    # Chicago - PM10
+    chicago_pm10 = AQScenario(
+        location="chicago",
+        noaa_station_id="72530094846",
+        aq_param_target=params["pm10"]
+    )
+    chicago_pm10.update_noaa_station_coords(41.8781, -87.6298)  # Chicago coordinates
+    scenarios[chicago_pm10.name] = chicago_pm10
+    
+    # Chicago - O3
+    chicago_o3 = AQScenario(
+        location="chicago",
+        noaa_station_id="72530094846",
+        aq_param_target=params["o3"]
+    )
+    chicago_o3.update_noaa_station_coords(41.8781, -87.6298)  # Chicago coordinates
+    scenarios[chicago_o3.name] = chicago_o3
     
     return scenarios 
