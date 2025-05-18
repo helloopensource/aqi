@@ -74,16 +74,33 @@ To make a prediction using a trained model:
 curl -X POST "http://localhost:8000/api/v1/predict" \
      -H "Content-Type: application/json" \
      -d '{
-           "scenario": "los-angeles_pm25",
-           "date": "2023-06-15",
+           "scenario_name": "los-angeles_pm25",
+           "prediction_date": "2023-06-15",
            "weather_data": {
+             "DATE": "2023-06-15",
+             "TEMP": 70.2,
+             "TEMP_ATTRIBUTES": "0",
              "DEWP": 50.5,
+             "DEWP_ATTRIBUTES": "0",
+             "SLP": 1013.2,
+             "SLP_ATTRIBUTES": "0",
+             "STP": 1013.2,
+             "STP_ATTRIBUTES": "0",
+             "VISIB": 10.0,
              "WDSP": 5.2,
+             "WDSP_ATTRIBUTES": "0",
+             "MXSPD": 8.0,
+             "GUST": 12.0,
              "MAX": 78.3,
+             "MAX_ATTRIBUTES": "0",
              "MIN": 62.1,
              "PRCP": 0.0,
+             "PRCP_ATTRIBUTES": "0",
+             "SNDP": 0.0,
+             "FRSHTT": "000000",
              "MONTH": 6,
              "DAYOFWEEK": 3,
+             "SEASON": "Summer",
              "TEMP_RANGE": 16.2,
              "TEMP_AVG": 70.2,
              "TEMP_DEWP_DIFF": 19.7,
@@ -91,6 +108,8 @@ curl -X POST "http://localhost:8000/api/v1/predict" \
            }
          }'
 ```
+
+Note: The API will automatically add any missing required features with default values if they are not provided in the request.
 
 ## Project Structure
 
