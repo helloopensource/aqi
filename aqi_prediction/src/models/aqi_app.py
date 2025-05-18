@@ -180,7 +180,7 @@ class AQIApp:
             # Access + prepare data and save to a local data file
             noaagsod_bucket = NOAA_BUCKET
             logger.info(f'Accessing NOAA GSOD dataset from AWS Open Data Registry (bucket: {noaagsod_bucket})...')
-            s3 = boto3.client('s3', config=Config(signature_version=UNSIGNED))
+            s3 = boto3.client('s3', config=Config(signature_version=UNSIGNED, connect_timeout=5, read_timeout=10))
 
             os.makedirs(os.path.dirname(filename_noaa), exist_ok=True)
             
@@ -278,7 +278,7 @@ class AQIApp:
             }
             
             try:
-                aq_resp = requests.get(f"{OPENAQ_API_URL}/locations", params=aq_req_params, headers=headers)
+                aq_resp = requests.get(f"{OPENAQ_API_URL}/locations", params=aq_req_params, headers=headers, timeout=10)
                 aq_data = aq_resp.json()
                 
                 if 'results' in aq_data:
@@ -319,7 +319,7 @@ class AQIApp:
                             }
                             
                             logger.info(f'Fetching data for sensor {sensor_id} in {year}')
-                            aq_resp = requests.get(aq_req_url, params=aq_req_params, headers=headers)
+                            aq_resp = requests.get(aq_req_url, params=aq_req_params, headers=headers, timeout=10)
                             aq_data = aq_resp.json()
                             
                             if 'results' in aq_data:

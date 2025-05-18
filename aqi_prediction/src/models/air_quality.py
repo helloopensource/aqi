@@ -128,7 +128,7 @@ class AQScenario:
         noaa_station_id: str, 
         aq_param_target: AQParam, 
         unhealthy_threshold: Optional[float] = None, 
-        year_start: int = 2016, 
+        year_start: int = 2020, 
         year_end: int = 2024, 
         aq_radius_miles: int = 10,
         feature_columns_to_drop: Optional[List[str]] = None

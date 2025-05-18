@@ -31,6 +31,8 @@ class ModelTrainer:
         self.scenario = scenario
         self.target_label = target_label
         self.model_path = os.path.join(MODEL_DIR, f"aq_{scenario.name}_{scenario.year_start}-{scenario.year_end}")
+        self._predictor = None  # Cache for the loaded model
+        self._model_loaded = False  # Flag to track if model is loaded
         
         # Ensure model directory exists
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
@@ -87,22 +89,24 @@ class ModelTrainer:
         logger.info(f"Model will be saved to: {self.model_path}")
         
         try:
-            # Initialize and train the predictor
+            # Set a default time limit if none provided
+            if time_limit_secs is None:
+                time_limit_secs = 300  # 5 minutes default
+            
+            # Create predictor with time limit
             predictor = TabularPredictor(
-                label=self.target_label, 
+                label=self.target_label,
                 path=self.model_path,
                 problem_type=problem_type,
                 eval_metric=eval_metric
             )
             
+            # Train with timeout
             predictor.fit(
                 train_data=train_df,
                 tuning_data=validation_df,
                 time_limit=time_limit_secs,
-                hyperparameters=hyperparameters,
-                auto_stack=True,
-                use_bag_holdout=True,
-                verbosity=2
+                hyperparameters=hyperparameters
             )
             
             # Generate feature importance
@@ -145,14 +149,26 @@ class ModelTrainer:
         Returns:
             Loaded TabularPredictor or None if not found
         """
+        if self._model_loaded and self._predictor is not None:
+            logger.info("Using cached model")
+            return self._predictor
+
         if not os.path.exists(self.model_path):
             logger.warning(f"Model path does not exist: {self.model_path}")
             return None
         
         try:
             logger.info(f"Loading model from: {self.model_path}")
-            predictor = TabularPredictor.load(self.model_path)
-            return predictor
+            # Clear any existing model from memory
+            if self._predictor is not None:
+                del self._predictor
+                import gc
+                gc.collect()
+            
+            # Load model with minimal memory usage
+            self._predictor = TabularPredictor.load(self.model_path, require_version_match=False)
+            self._model_loaded = True
+            return self._predictor
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
             return None
@@ -167,55 +183,58 @@ class ModelTrainer:
         Returns:
             DataFrame with predictions
         """
-        predictor = self.load_model()
+        logger.info("Starting prediction process...")
         
-        if predictor is None:
+        if not self._model_loaded or self._predictor is None:
+            logger.info("Loading model...")
+            self._predictor = self.load_model()
+        
+        if self._predictor is None:
             logger.error("Cannot make predictions: model not found")
             raise ValueError("Model not found")
         
         try:
             # Check if we need to add missing columns required by the model
-            if hasattr(predictor, 'features'):
-                required_features = predictor.features()
-                # Add missing columns with default values
+            if hasattr(self._predictor, 'features'):
+                logger.info("Checking required features...")
+                required_features = self._predictor.features()
+                # Find missing columns
                 missing_columns = [col for col in required_features if col not in data.columns]
                 if missing_columns:
-                    for col in missing_columns:
-                        logger.warning(f"Adding missing column: {col} with default value of 0")
-                        data[col] = 0
-                    logger.info(f"Added {len(missing_columns)} missing columns with default values")
+                    logger.error(f"Missing required features for prediction: {missing_columns}")
+                    raise ValueError(f"Missing required features for prediction: {missing_columns}")
             
             # Handle version differences with feature preprocessing
             try:
+                logger.info("Preprocessing features...")
                 # Some versions have transform_features method
-                if hasattr(predictor, 'transform_features'):
-                    data = predictor.transform_features(data)
-                    logger.info("Applied feature transformation using predictor's transform_features")
+                if hasattr(self._predictor, 'transform_features'):
+                    data = self._predictor.transform_features(data)
+                    logger.info("Feature transformation completed")
+                else:
+                    logger.info("No feature transformation needed")
             except Exception as e:
                 logger.warning(f"Could not transform features: {str(e)}. Using raw features.")
             
-            # Make predictions
-            predictions = predictor.predict(data)
-            
-            # Get prediction probabilities for binary classification
-            if predictor.problem_type == 'binary':
-                try:
-                    probabilities = predictor.predict_proba(data)
-                    result = pd.DataFrame({
-                        'prediction': predictions,
-                        'probability_unhealthy': probabilities.iloc[:, 1]
-                    })
-                except Exception as e:
-                    logger.warning(f"Could not get prediction probabilities: {str(e)}")
-                    result = pd.DataFrame({
-                        'prediction': predictions
-                    })
-            else:
+            # Make predictions with minimal memory usage
+            logger.info("Making predictions...")
+            try:
+                predictions = self._predictor.predict(data)
+                logger.info("Getting prediction probabilities...")
+                probabilities = self._predictor.predict_proba(data)
+                
+                # Create result DataFrame
+                logger.info("Creating result DataFrame...")
                 result = pd.DataFrame({
-                    'prediction': predictions
+                    'prediction': predictions,
+                    'probability_unhealthy': probabilities[1] if len(probabilities.shape) > 1 else probabilities
                 })
-            
-            return result
+                
+                logger.info("Prediction process completed successfully")
+                return result
+            except Exception as e:
+                logger.error(f"Error during prediction step: {str(e)}")
+                raise
             
         except Exception as e:
             logger.error(f"Error during prediction: {str(e)}")
@@ -235,14 +254,31 @@ class ModelTrainer:
             return {"error": "Model not found"}
         
         try:
+            # Get basic info first
             model_info = {
                 "scenario": self.scenario.name,
                 "target": self.target_label,
                 "path": self.model_path,
-                "problem_type": str(predictor.problem_type),
-                "eval_metric": str(predictor.eval_metric),
-                "features": predictor.features()
             }
+            
+            # Try to get additional info with individual error handling
+            try:
+                model_info["problem_type"] = str(predictor.problem_type)
+            except Exception as e:
+                logger.warning(f"Could not get problem type: {str(e)}")
+                model_info["problem_type"] = "unknown"
+            
+            try:
+                model_info["eval_metric"] = str(predictor.eval_metric)
+            except Exception as e:
+                logger.warning(f"Could not get eval metric: {str(e)}")
+                model_info["eval_metric"] = "unknown"
+            
+            try:
+                model_info["features"] = predictor.features()
+            except Exception as e:
+                logger.warning(f"Could not get features: {str(e)}")
+                model_info["features"] = []
             
             # Try to get model names
             try:
@@ -259,11 +295,12 @@ class ModelTrainer:
                 logger.warning(f"Could not get model types: {str(e)}")
                 model_info["model_types"] = ["unknown"]
             
-            # Try to get leaderboard
+            # Try to get best model
             try:
                 model_info["best_model"] = str(predictor.get_model_best())
             except Exception as e:
                 logger.warning(f"Could not get best model: {str(e)}")
+                model_info["best_model"] = "unknown"
             
             return model_info
             
