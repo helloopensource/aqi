@@ -70,7 +70,7 @@ UNHEALTHY_THRESHOLDS = {
 
 # Feature engineering settings
 DEFAULT_WEATHER_FEATURES = [
-    'DEWP',     # Dew point temperature
+    'DEWP',     # Dew point temperature2
     'WDSP',     # Wind speed
     'MAX',      # Maximum temperature
     'MIN',      # Minimum temperature

@@ -22,7 +22,7 @@ from src.models.air_quality import AQParam, AQScenario, get_default_scenarios
 from src.models.aqi_app import AQIApp
 from src.models.model_trainer import ModelTrainer
 from src.utils.aqi_calculator import calculate_aqi, get_category_from_aqi
-from src.config.settings import DEFAULT_ML_TARGET_LABEL
+from src.config.settings import DEFAULT_ML_TARGET_LABEL, UNHEALTHY_THRESHOLDS
 
 # Load environment variables
 load_dotenv()
@@ -217,10 +217,8 @@ def main():
                 # Calculate a more reasonable concentration based on the probability
                 # Use actual unhealthy thresholds from the config
                 if param_name == "pm25":
-                    # For PM2.5, the unhealthy threshold is around 35.5 µg/m³
-                    # Map probability to a more reasonable concentration range
-                    # Lower probability should result in lower concentration
-                    unhealthy_threshold = scenario.unhealthy_threshold
+                    # For PM2.5, unhealthy threshold is 35.5 µg/m³
+                    unhealthy_threshold = UNHEALTHY_THRESHOLDS["pm25"]
                     if is_unhealthy:
                         # If predicted unhealthy, concentration should be above threshold
                         estimated_conc = unhealthy_threshold + (probability * 50)
@@ -228,13 +226,41 @@ def main():
                         # If predicted healthy, concentration should be below threshold
                         estimated_conc = probability * unhealthy_threshold * 0.8
                 elif param_name == "pm10":
-                    # For PM10, the unhealthy threshold is around 155 µg/m³
-                    unhealthy_threshold = scenario.unhealthy_threshold
+                    # For PM10, unhealthy threshold is 155 µg/m³
+                    unhealthy_threshold = UNHEALTHY_THRESHOLDS["pm10"]
                     if is_unhealthy:
                         # If predicted unhealthy, concentration should be above threshold
                         estimated_conc = unhealthy_threshold + (probability * 100)
                     else:
                         # If predicted healthy, concentration should be below threshold
+                        estimated_conc = probability * unhealthy_threshold * 0.8
+                elif param_name == "o3":
+                    # For O3, unhealthy threshold is 0.070 ppm
+                    unhealthy_threshold = UNHEALTHY_THRESHOLDS["o3"]
+                    if is_unhealthy:
+                        estimated_conc = unhealthy_threshold + (probability * 0.05)
+                    else:
+                        estimated_conc = probability * unhealthy_threshold * 0.8
+                elif param_name == "no2":
+                    # For NO2, unhealthy threshold is 0.100 ppm
+                    unhealthy_threshold = UNHEALTHY_THRESHOLDS["no2"]
+                    if is_unhealthy:
+                        estimated_conc = unhealthy_threshold + (probability * 0.05)
+                    else:
+                        estimated_conc = probability * unhealthy_threshold * 0.8
+                elif param_name == "so2":
+                    # For SO2, unhealthy threshold is 0.075 ppm
+                    unhealthy_threshold = UNHEALTHY_THRESHOLDS["so2"]
+                    if is_unhealthy:
+                        estimated_conc = unhealthy_threshold + (probability * 0.05)
+                    else:
+                        estimated_conc = probability * unhealthy_threshold * 0.8
+                elif param_name == "co":
+                    # For CO, unhealthy threshold is 9.5 ppm
+                    unhealthy_threshold = UNHEALTHY_THRESHOLDS["co"]
+                    if is_unhealthy:
+                        estimated_conc = unhealthy_threshold + (probability * 5)
+                    else:
                         estimated_conc = probability * unhealthy_threshold * 0.8
                 else:
                     # Default conservative estimate
