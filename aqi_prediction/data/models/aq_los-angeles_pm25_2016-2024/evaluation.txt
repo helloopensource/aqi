@@ -1,1 +1,1 @@
-{'roc_auc': np.float64(0.9993127147766323), 'accuracy': 0.9979508196721312, 'balanced_accuracy': np.float64(0.9989690721649485), 'mcc': np.float64(0.865132133403576), 'f1': 0.8571428571428571, 'precision': 0.75, 'recall': 1.0}
+{'f1': 0.8, 'accuracy': 0.9967213114754099, 'balanced_accuracy': np.float64(0.8991735537190083), 'mcc': np.float64(0.7983471074380165), 'roc_auc': np.float64(0.9801652892561984), 'precision': 0.8, 'recall': 0.8}

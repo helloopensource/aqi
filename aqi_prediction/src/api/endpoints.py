@@ -337,7 +337,7 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
 
 
 @router.post("/train/{scenario_name}", response_model=ModelInfoResponse, tags=["Training"])
-async def train_model(scenario_name: str, time_limit_secs: Optional[int] = Query(None)):
+async def train_model(scenario_name: str, time_limit_secs: Optional[int] = Query(None), eval_metric: Optional[str] = Query(None)):
     """Train a model for the specified scenario."""
     if scenario_name not in app.aq_scenarios:
         raise HTTPException(status_code=404, detail=f"Scenario '{scenario_name}' not found")
@@ -379,7 +379,7 @@ async def train_model(scenario_name: str, time_limit_secs: Optional[int] = Query
         try:
             trainer = ModelTrainer(scenario, app.ml_target_label)
             time_limit = time_limit_secs or app.ml_time_limit_secs
-            predictor = trainer.train_model(train_df, val_df, time_limit)
+            predictor = trainer.train_model(train_df, val_df, time_limit, eval_metric=eval_metric)
             
             # Return model info
             model_info = trainer.get_model_info()

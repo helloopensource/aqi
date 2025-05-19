@@ -63,7 +63,7 @@ Once the server is running, you can access the API documentation at:
 To train a model for a specific scenario:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/train/los-angeles_pm25?time_limit_secs=900"
+curl -X POST "http://localhost:8000/api/v1/train/los-angeles_pm25?time_limit_secs=900&eval_metric=f1"
 ```
 
 ### Making Predictions
