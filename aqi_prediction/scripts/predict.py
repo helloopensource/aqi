@@ -117,6 +117,7 @@ def load_weather_data(args):
             "MXSPD": 10.0,              # Max sustained wind speed in knots
             "GUST": 0.0,                # Wind gust in knots
             "MAX_ATTRIBUTES": "Valid",  # String categorical
+            "MIN_ATTRIBUTES": "Valid",  # String categorical
             "PRCP_ATTRIBUTES": "Valid",  # String categorical
             "FRSHTT": "000000",         # Flags for weather conditions
             "SEASON": "Summer"          # String categorical based on MONTH

@@ -185,7 +185,7 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
         required_features = [
             'TEMP', 'TEMP_ATTRIBUTES', 'DEWP_ATTRIBUTES', 'SLP', 'SLP_ATTRIBUTES',
             'STP', 'STP_ATTRIBUTES', 'VISIB', 'VISIB_ATTRIBUTES', 'WDSP_ATTRIBUTES', 'MXSPD', 'GUST',
-            'MAX_ATTRIBUTES', 'PRCP_ATTRIBUTES', 'FRSHTT', 'SEASON', 'SNDP'
+            'MAX', 'MAX_ATTRIBUTES', 'MIN', 'MIN_ATTRIBUTES', 'PRCP', 'PRCP_ATTRIBUTES', 'FRSHTT', 'SEASON', 'SNDP'
         ]
         
         # Add missing features with default values
@@ -204,7 +204,7 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
                         data[feature] = 'Unknown'
                 elif feature.endswith('_ATTRIBUTES'):
                     data[feature] = '0'  # Default attribute value
-                elif feature in ['TEMP', 'DEWP', 'SLP', 'STP', 'VISIB', 'WDSP', 'MXSPD', 'GUST', 'SNDP']:
+                elif feature in ['TEMP', 'DEWP', 'SLP', 'STP', 'VISIB', 'WDSP', 'MXSPD', 'GUST', 'MAX', 'MIN', 'PRCP', 'SNDP']:
                     data[feature] = 0.0  # Default numeric value
                 elif feature == 'FRSHTT':
                     data[feature] = '000000'  # Default weather phenomena code
