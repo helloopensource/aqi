@@ -153,6 +153,9 @@ class AQScenario:
         self.noaa_station_lng = 0.0
         self.open_aq_sensor_ids = []
         
+        # Dictionary to store sensor distances for spatial interpolation
+        self.sensor_distances = {}
+        
         self.aq_param_target = aq_param_target
         
         if unhealthy_threshold and unhealthy_threshold > 0.0:
