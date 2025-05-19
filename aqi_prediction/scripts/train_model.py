@@ -39,6 +39,9 @@ def parse_args():
         default="los-angeles_pm25",
         help="Scenario to train model for"
     )
+    parser.add_argument( 
+        "--metric", type=str, default="accuracy", help="Metric to optimize" 
+    )
     parser.add_argument(
         "--time-limit", 
         type=int, 
@@ -122,7 +125,7 @@ def main():
         
         logger.info("Training model...")
         trainer = ModelTrainer(scenario, app.ml_target_label)
-        predictor = trainer.train_model(train_df, val_df, args.time_limit)
+        predictor = trainer.train_model(train_df, val_df, args.time_limit, eval_metric=args.metric)
         
         # Display model info
         model_info = trainer.get_model_info()

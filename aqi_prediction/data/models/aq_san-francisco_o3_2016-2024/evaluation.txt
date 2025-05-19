@@ -1,0 +1,1 @@
+{'roc_auc': np.float64(0.660164271047228), 'accuracy': 0.9898373983739838, 'balanced_accuracy': np.float64(0.5000000000000001), 'mcc': 0.0, 'f1': 0.0, 'precision': 0.0, 'recall': 0.0}

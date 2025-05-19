@@ -1,8 +1,6 @@
 aqi_prediction/.env
 aqi_prediction/venv
-aqi_prediction/data
 experiments/.env
-experiments/data
 experiment/.venv
 aqi_prediction_fe/node_modules
 aqi_prediction_fe/.next
