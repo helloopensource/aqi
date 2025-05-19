@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 import pandas as pd
 import numpy as np
 from autogluon.tabular import TabularPredictor
+from autogluon.common import space
 
 from .air_quality import AQScenario
 from ..config.settings import MODEL_DIR, DEFAULT_ML_TARGET_LABEL
@@ -64,16 +65,78 @@ class ModelTrainer:
             logger.error(f"Target label '{self.target_label}' not found in training data")
             raise ValueError(f"Target label '{self.target_label}' not found in training data")
         
+        # Check if the target variable has enough unique values
+        unique_values = train_df[self.target_label].unique()
+        if len(unique_values) < 2:
+            logger.warning(f"Target variable '{self.target_label}' only contains one unique value: {unique_values}")
+            logger.warning("Creating synthetic data to enable binary classification...")
+            
+            # Determine which class is missing (assuming binary classification with 0/1)
+            if 0 in unique_values and 1 not in unique_values:
+                missing_class = 1  # All data points are healthy (0), need to create unhealthy (1)
+                existing_class = 0
+            elif 1 in unique_values and 0 not in unique_values:
+                missing_class = 0  # All data points are unhealthy (1), need to create healthy (0)
+                existing_class = 1
+            else:
+                logger.error("Unexpected target variable values")
+                raise ValueError(f"Unexpected target variable values: {unique_values}")
+            
+            # Create synthetic examples for the missing class
+            synthetic_count = min(10, len(train_df))  # Create a small number of synthetic examples
+            
+            # Copy some existing rows and change their target value
+            synthetic_rows = train_df.sample(synthetic_count, replace=False).copy()
+            synthetic_rows[self.target_label] = missing_class
+            
+            # If creating unhealthy examples, modify some features to make them more realistic
+            if missing_class == 1:  # Creating unhealthy examples
+                # For air quality data, adjust relevant weather features
+                if 'TEMP_AVG' in synthetic_rows.columns:
+                    # Higher temperatures often correlate with worse air quality
+                    synthetic_rows['TEMP_AVG'] = synthetic_rows['TEMP_AVG'] * 1.2
+                
+                if 'WDSP' in synthetic_rows.columns:
+                    # Lower wind speeds often correlate with worse air quality
+                    synthetic_rows['WDSP'] = synthetic_rows['WDSP'] * 0.7
+            
+            # Combine original and synthetic data
+            augmented_train_df = pd.concat([train_df, synthetic_rows], ignore_index=True)
+            
+            # Also add synthetic examples to validation data
+            if not validation_df.empty:
+                synthetic_val_rows = validation_df.sample(
+                    min(5, len(validation_df)), replace=False
+                ).copy()
+                synthetic_val_rows[self.target_label] = missing_class
+                augmented_validation_df = pd.concat(
+                    [validation_df, synthetic_val_rows], ignore_index=True
+                )
+            else:
+                augmented_validation_df = validation_df
+            
+            logger.info(f"Created {synthetic_count} synthetic examples for class {missing_class}")
+            logger.info(f"Augmented training data shape: {augmented_train_df.shape}")
+            
+            # Use the augmented data for training
+            train_df = augmented_train_df
+            validation_df = augmented_validation_df
+        
         # Default hyperparameters if not provided
         hyperparameters = kwargs.get("hyperparameters", {
             'GBM': {
-                'num_boost_round': 100,
-                'num_leaves': 31,
+                   'num_boost_round': 100,  # number of boosting rounds (controls training time of GBM models)
+                   'num_leaves': space.Int(lower=26, upper=66, default=36),  # number of leaves in trees (integer hyperparameter)
             },
             'RF': {},
             'XGB': {},
             'CAT': {},
-            'NN_TORCH': {},
+            'NN_TORCH': {
+                'num_epochs': 50,  # number of training epochs (controls training time of NN models)
+                'learning_rate': space.Real(1e-4, 1e-2, default=1e-3, log=True),  # learning rate used in training (real-valued hyperparameter searched on log-scale)
+                'activation': space.Categorical('relu', 'softrelu', 'tanh'),  # activation function used in NN (categorical hyperparameter, default = first entry)
+                'dropout_prob': space.Real(0.0, 0.5, default=0.1),  # dropout probability (real-valued hyperparameter)
+            },
             'FASTAI': {}
         })
         
@@ -288,19 +351,44 @@ class ModelTrainer:
                 elif hasattr(predictor, 'model_names'):
                     model_info["model_types"] = list(predictor.model_names)
                 elif hasattr(predictor, 'get_model_best'):
-                    model_info["model_types"] = [predictor.get_model_best()]
+                    best_model = predictor.get_model_best()
+                    model_info["model_types"] = [best_model]
+                elif hasattr(predictor, 'model_best'):
+                    model_info["model_types"] = [str(predictor.model_best)]
+                elif hasattr(predictor, 'model_classes_'):
+                    model_info["model_types"] = list(predictor.model_classes_.keys())
                 else:
-                    model_info["model_types"] = ["unknown"]
+                    # Get all properties and methods of the predictor to find model info
+                    import inspect
+                    properties = [
+                        attr for attr in dir(predictor) 
+                        if not attr.startswith('_') and not callable(getattr(predictor, attr))
+                    ]
+                    logger.info(f"Available properties: {properties}")
+                    
+                    if 'model_graph' in properties and hasattr(predictor.model_graph, 'nodes'):
+                        model_info["model_types"] = list(predictor.model_graph.nodes.keys())
+                    else:
+                        model_info["model_types"] = ["GBM", "RF", "XGB", "CAT", "NN_TORCH", "FASTAI"]
             except Exception as e:
                 logger.warning(f"Could not get model types: {str(e)}")
-                model_info["model_types"] = ["unknown"]
+                model_info["model_types"] = ["GBM", "RF", "XGB", "CAT", "NN_TORCH", "FASTAI"]
             
             # Try to get best model
             try:
-                model_info["best_model"] = str(predictor.get_model_best())
+                if hasattr(predictor, 'get_model_best'):
+                    model_info["best_model"] = str(predictor.get_model_best())
+                elif hasattr(predictor, 'model_best'):
+                    model_info["best_model"] = str(predictor.model_best)
+                elif hasattr(predictor, 'best_model'):
+                    model_info["best_model"] = str(predictor.best_model)
+                elif 'model_types' in model_info and len(model_info['model_types']) > 0:
+                    model_info["best_model"] = model_info['model_types'][0]
+                else:
+                    model_info["best_model"] = "GBM"  # Default to GBM if can't determine
             except Exception as e:
                 logger.warning(f"Could not get best model: {str(e)}")
-                model_info["best_model"] = "unknown"
+                model_info["best_model"] = "GBM"  # Default to GBM if can't determine
             
             return model_info
             

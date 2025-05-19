@@ -47,6 +47,14 @@ AQI_BREAKPOINTS = {
         (255, 354): (151, 200),   # Unhealthy
         (355, 424): (201, 300),   # Very Unhealthy
         (425, 604): (301, 500)    # Hazardous
+    },
+    "o3": {
+        (0, 0.054): (0, 50),       # Good
+        (0.055, 0.070): (51, 100),  # Moderate
+        (0.071, 0.085): (101, 150), # Unhealthy for Sensitive Groups
+        (0.086, 0.105): (151, 200), # Unhealthy
+        (0.106, 0.200): (201, 300), # Very Unhealthy
+        (0.201, 0.604): (301, 500)  # Hazardous
     }
 }
 

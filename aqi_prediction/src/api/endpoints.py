@@ -184,7 +184,7 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
         # Ensure all required NOAA features are present
         required_features = [
             'TEMP', 'TEMP_ATTRIBUTES', 'DEWP_ATTRIBUTES', 'SLP', 'SLP_ATTRIBUTES',
-            'STP', 'STP_ATTRIBUTES', 'VISIB', 'WDSP_ATTRIBUTES', 'MXSPD', 'GUST',
+            'STP', 'STP_ATTRIBUTES', 'VISIB', 'VISIB_ATTRIBUTES', 'WDSP_ATTRIBUTES', 'MXSPD', 'GUST',
             'MAX_ATTRIBUTES', 'PRCP_ATTRIBUTES', 'FRSHTT', 'SEASON', 'SNDP'
         ]
         
@@ -254,42 +254,59 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
             # Calculate AQI value based on probability and parameter
             param_name = scenario.aq_param_target.name
             
-            # Simplified approach: derive a concentration estimate from probability
-            aqi_value = None
-            category = None
-            
-            if probability is not None:
-                # Calculate a more reasonable concentration based on the probability
-                # Use actual unhealthy thresholds from the config
-                if param_name == "pm25":
-                    # For PM2.5, the unhealthy threshold is around 35.5 µg/m³
-                    # Map probability to a more reasonable concentration range
-                    unhealthy_threshold = scenario.unhealthy_threshold
-                    if is_unhealthy_pred:
-                        # If predicted unhealthy, concentration should be above threshold
-                        estimated_conc = unhealthy_threshold + (probability * 50)
-                    else:
-                        # If predicted healthy, concentration should be below threshold
-                        estimated_conc = probability * unhealthy_threshold * 0.8
-                elif param_name == "pm10":
-                    # For PM10, the unhealthy threshold is around 155 µg/m³
-                    unhealthy_threshold = scenario.unhealthy_threshold
-                    if is_unhealthy_pred:
-                        # If predicted unhealthy, concentration should be above threshold
-                        estimated_conc = unhealthy_threshold + (probability * 100)
-                    else:
-                        # If predicted healthy, concentration should be below threshold
-                        estimated_conc = probability * unhealthy_threshold * 0.8
+            # Calculate a more reasonable concentration based on the probability
+            # Use actual unhealthy thresholds from the config
+            if param_name == "pm25":
+                # For PM2.5, the unhealthy threshold is around 35.5 µg/m³
+                # Map probability to a more reasonable concentration range
+                unhealthy_threshold = scenario.unhealthy_threshold
+                if is_unhealthy_pred:
+                    # If predicted unhealthy, concentration should be above threshold
+                    estimated_conc = unhealthy_threshold + (probability * 50)
                 else:
-                    # Default conservative estimate
-                    estimated_conc = probability * 20
-                
-                # Ensure logical consistency - cap maximum concentration if not unhealthy
-                if not is_unhealthy_pred and estimated_conc > scenario.unhealthy_threshold:
-                    estimated_conc = scenario.unhealthy_threshold * 0.9
-                
-                # Calculate AQI
-                aqi_value, category_info = calculate_aqi(estimated_conc, param_name)
+                    # If predicted healthy, ensure a minimum concentration for reasonable AQI
+                    min_conc = 3.0  # Minimum concentration to ensure meaningful AQI
+                    max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction (around 32 µg/m³)
+                    
+                    # Scale the probability to a realistic concentration range
+                    estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
+            elif param_name == "pm10":
+                # For PM10, the unhealthy threshold is around 155 µg/m³
+                unhealthy_threshold = scenario.unhealthy_threshold
+                if is_unhealthy_pred:
+                    # If predicted unhealthy, concentration should be above threshold
+                    estimated_conc = unhealthy_threshold + (probability * 100)
+                else:
+                    # If predicted healthy, ensure a minimum concentration for reasonable AQI
+                    min_conc = 10.0  # Minimum concentration to ensure meaningful AQI
+                    max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction (around 140 µg/m³)
+                    
+                    # Scale the probability to a realistic concentration range
+                    estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
+            elif param_name == "o3":
+                # For O3, the unhealthy threshold is typically around 0.070 ppm
+                unhealthy_threshold = scenario.unhealthy_threshold
+                if is_unhealthy_pred:
+                    # If predicted unhealthy, concentration should be above threshold
+                    estimated_conc = unhealthy_threshold + (probability * 0.15)  # Add up to 0.15 ppm
+                else:
+                    # If predicted healthy, concentration should be below threshold but still realistic
+                    # Ensure a minimum concentration (0.02 ppm) and scale up to 90% of threshold
+                    min_conc = 0.02  # Minimum concentration to ensure non-zero AQI
+                    max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction
+                    
+                    # Scale the probability to a realistic concentration range
+                    estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
+            else:
+                # Default conservative estimate
+                estimated_conc = probability * 20
+            
+            # Ensure logical consistency - cap maximum concentration if not unhealthy
+            if not is_unhealthy_pred and estimated_conc > scenario.unhealthy_threshold:
+                estimated_conc = scenario.unhealthy_threshold * 0.9
+            
+            # Calculate AQI
+            aqi_value, category_info = calculate_aqi(estimated_conc, param_name)
             
             return {
                 "scenario": scenario.name,

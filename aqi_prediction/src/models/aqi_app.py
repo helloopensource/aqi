@@ -214,6 +214,9 @@ class AQIApp:
                 noaagsod_df['TEMP_DEWP_DIFF'] = noaagsod_df['TEMP_AVG'] - noaagsod_df['DEWP']
                 noaagsod_df['WDSP_TEMP'] = noaagsod_df['WDSP'] * noaagsod_df['TEMP_AVG']
                 
+                # Add VISIB_ATTRIBUTES to the feature engineering logic
+                noaagsod_df['VISIB_ATTRIBUTES'] = '0'  # Default attribute value for visibility
+                
                 # Update scenario with station coordinates
                 if not noaagsod_df.empty and 'LATITUDE' in noaagsod_df.columns and 'LONGITUDE' in noaagsod_df.columns:
                     first_row = noaagsod_df.iloc[0]
