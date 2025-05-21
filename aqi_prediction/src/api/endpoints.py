@@ -16,6 +16,7 @@ from ..models.air_quality import AQParam, AQScenario, get_default_scenarios
 from ..models.aqi_app import AQIApp
 from ..models.model_trainer import ModelTrainer
 from ..utils.aqi_calculator import calculate_aqi, get_category_from_aqi, is_unhealthy
+from ..config.settings import REGRESSION_TARGET_LABELS
 from .models import (
     AQParamModel, AQScenarioModel, HealthResponse, ErrorResponse,
     PredictionRequest, PredictionResponse, ModelInfoResponse,
@@ -166,6 +167,22 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
     # Check if model exists
     try:
         logger.info("Loading model...")
+        # Check if we should use regression model - look for target values with _value suffix
+        regression_target = None
+        for target in REGRESSION_TARGET_LABELS:
+            if target.startswith(scenario.aq_param_target.name):
+                regression_target = target
+                break
+        
+        # Initialize ModelTrainer with regression flag if target found
+        if regression_target:
+            logger.info(f"Using regression model with target: {regression_target}")
+            trainer = ModelTrainer(scenario, regression_target, is_regression=True)
+        else:
+            # Fall back to classification model
+            logger.info(f"Using classification model with target: {app.ml_target_label}")
+            trainer = ModelTrainer(scenario, app.ml_target_label)
+        
         predictor = await asyncio.wait_for(
             run_in_threadpool(trainer.load_model),
             timeout=10.0  # 10 second timeout for loading
@@ -211,6 +228,12 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
                 else:
                     data[feature] = 0.0  # Default value for other numeric features
         
+        # Add isUnhealthy column which is required by the model 
+        # (trained models require this field even for regression prediction)
+        if 'isUnhealthy' not in data.columns:
+            logger.info("Adding required 'isUnhealthy' column with default value 0")
+            data['isUnhealthy'] = 0  # Default to healthy
+        
         # Handle feature types in a more robust way
         try:
             # Different versions of AutoGluon have different ways of accessing feature metadata
@@ -242,67 +265,123 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
             
             logger.info("Prediction completed, processing results...")
             
+            # Log result structure for debugging
+            logger.debug(f"Prediction result columns: {result.columns.tolist()}")
+            logger.debug(f"Prediction result first row: {result.iloc[0].to_dict()}")
+            
             # Get prediction from result
-            prediction = result["prediction"].iloc[0]
-            is_unhealthy_pred = bool(prediction)
+            try:
+                # Check if result is empty
+                if result.empty:
+                    raise ValueError("Empty prediction result returned")
+                
+                # Check if prediction column exists
+                if "prediction" in result.columns:
+                    prediction = result["prediction"].iloc[0]
+                    is_unhealthy_pred = bool(prediction)
+                elif "isUnhealthy_predicted" in result.columns:
+                    is_unhealthy_pred = bool(result["isUnhealthy_predicted"].iloc[0])
+                else:
+                    # Default to non-unhealthy if we can't determine
+                    logger.warning("Could not find prediction column, defaulting to healthy")
+                    is_unhealthy_pred = False
+            except Exception as e:
+                logger.error(f"Error handling prediction result: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error handling prediction result: {str(e)}")
             
             # Get probability if available
             probability = None
-            if "probability_unhealthy" in result.columns:
-                probability = float(result["probability_unhealthy"].iloc[0])
+            try:
+                if "probability_unhealthy" in result.columns:
+                    probability = float(result["probability_unhealthy"].iloc[0])
+                elif "unhealthy_probability" in result.columns:
+                    probability = float(result["unhealthy_probability"].iloc[0])
+            except Exception as e:
+                logger.warning(f"Could not get probability: {str(e)}")
             
             # Calculate AQI value based on probability and parameter
             param_name = scenario.aq_param_target.name
             
-            # Calculate a more reasonable concentration based on the probability
-            # Use actual unhealthy thresholds from the config
-            if param_name == "pm25":
-                # For PM2.5, the unhealthy threshold is around 35.5 µg/m³
-                # Map probability to a more reasonable concentration range
-                unhealthy_threshold = scenario.unhealthy_threshold
-                if is_unhealthy_pred:
-                    # If predicted unhealthy, concentration should be above threshold
-                    estimated_conc = unhealthy_threshold + (probability * 50)
-                else:
-                    # If predicted healthy, ensure a minimum concentration for reasonable AQI
-                    min_conc = 3.0  # Minimum concentration to ensure meaningful AQI
-                    max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction (around 32 µg/m³)
-                    
-                    # Scale the probability to a realistic concentration range
-                    estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
-            elif param_name == "pm10":
-                # For PM10, the unhealthy threshold is around 155 µg/m³
-                unhealthy_threshold = scenario.unhealthy_threshold
-                if is_unhealthy_pred:
-                    # If predicted unhealthy, concentration should be above threshold
-                    estimated_conc = unhealthy_threshold + (probability * 100)
-                else:
-                    # If predicted healthy, ensure a minimum concentration for reasonable AQI
-                    min_conc = 10.0  # Minimum concentration to ensure meaningful AQI
-                    max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction (around 140 µg/m³)
-                    
-                    # Scale the probability to a realistic concentration range
-                    estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
-            elif param_name == "o3":
-                # For O3, the unhealthy threshold is typically around 0.070 ppm
-                unhealthy_threshold = scenario.unhealthy_threshold
-                if is_unhealthy_pred:
-                    # If predicted unhealthy, concentration should be above threshold
-                    estimated_conc = unhealthy_threshold + (probability * 0.15)  # Add up to 0.15 ppm
-                else:
-                    # If predicted healthy, concentration should be below threshold but still realistic
-                    # Ensure a minimum concentration (0.02 ppm) and scale up to 90% of threshold
-                    min_conc = 0.02  # Minimum concentration to ensure non-zero AQI
-                    max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction
-                    
-                    # Scale the probability to a realistic concentration range
-                    estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
-            else:
-                # Default conservative estimate
-                estimated_conc = probability * 20
+            # Check if this is a regression model prediction (with direct value prediction)
+            # Try multiple possible column naming patterns for regression prediction
+            regression_prediction_cols = [
+                f"{param_name}_value_predicted",  # Standard format: pm25_value_predicted
+                f"{param_name}_predicted",        # Alternative format: pm25_predicted
+                f"predicted_{param_name}_value",  # Another format: predicted_pm25_value
+                f"predicted_{param_name}"         # Simple format: predicted_pm25
+            ]
+            regression_prediction_col = None
+            for col in regression_prediction_cols:
+                if col in result.columns:
+                    regression_prediction_col = col
+                    logger.info(f"Found regression prediction column: {col}")
+                    break
             
-            # Ensure logical consistency - cap maximum concentration if not unhealthy
-            if not is_unhealthy_pred and estimated_conc > scenario.unhealthy_threshold:
+            if regression_prediction_col in result.columns:
+                # Use regression model's predicted value directly
+                logger.info(f"Using regression model prediction from column: {regression_prediction_col}")
+                estimated_conc = float(result[regression_prediction_col].iloc[0])
+                
+                # Set is_unhealthy based on whether the predicted value exceeds the threshold
+                is_unhealthy_pred = estimated_conc > scenario.unhealthy_threshold
+                
+                # No need for probability in regression models
+                probability = None
+            else:
+                # Fall back to classification model behavior - calculate estimated concentration
+                logger.info("Using classification model to estimate concentration")
+                # Calculate a more reasonable concentration based on the probability
+                # Use actual unhealthy thresholds from the config
+                if param_name == "pm25":
+                    # For PM2.5, the unhealthy threshold is around 35.5 µg/m³
+                    # Map probability to a more reasonable concentration range
+                    unhealthy_threshold = scenario.unhealthy_threshold
+                    if is_unhealthy_pred:
+                        # If predicted unhealthy, concentration should be above threshold
+                        estimated_conc = unhealthy_threshold + (probability * 50)
+                    else:
+                        # If predicted healthy, ensure a minimum concentration for reasonable AQI
+                        min_conc = 3.0  # Minimum concentration to ensure meaningful AQI
+                        max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction (around 32 µg/m³)
+                        
+                        # Scale the probability to a realistic concentration range
+                        estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
+                elif param_name == "pm10":
+                    # For PM10, the unhealthy threshold is around 155 µg/m³
+                    unhealthy_threshold = scenario.unhealthy_threshold
+                    if is_unhealthy_pred:
+                        # If predicted unhealthy, concentration should be above threshold
+                        estimated_conc = unhealthy_threshold + (probability * 100)
+                    else:
+                        # If predicted healthy, ensure a minimum concentration for reasonable AQI
+                        min_conc = 10.0  # Minimum concentration to ensure meaningful AQI
+                        max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction (around 140 µg/m³)
+                        
+                        # Scale the probability to a realistic concentration range
+                        estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
+                elif param_name == "o3":
+                    # For O3, the unhealthy threshold is typically around 0.070 ppm
+                    unhealthy_threshold = scenario.unhealthy_threshold
+                    if is_unhealthy_pred:
+                        # If predicted unhealthy, concentration should be above threshold
+                        estimated_conc = unhealthy_threshold + (probability * 0.15)  # Add up to 0.15 ppm
+                    else:
+                        # If predicted healthy, concentration should be below threshold but still realistic
+                        # Ensure a minimum concentration (0.02 ppm) and scale up to 90% of threshold
+                        min_conc = 0.02  # Minimum concentration to ensure non-zero AQI
+                        max_healthy_conc = unhealthy_threshold * 0.9  # Max concentration for healthy prediction
+                        
+                        # Scale the probability to a realistic concentration range
+                        estimated_conc = min_conc + (probability * (max_healthy_conc - min_conc))
+                else:
+                    # Default conservative estimate
+                    estimated_conc = probability * 20
+            
+            # For classification models only - ensure logical consistency
+            # For regression models, we trust the model's output
+            is_classification_model = regression_prediction_col is None
+            
+            if is_classification_model and not is_unhealthy_pred and estimated_conc > scenario.unhealthy_threshold:
                 estimated_conc = scenario.unhealthy_threshold * 0.9
             
             # Calculate AQI
@@ -313,6 +392,7 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
                 "date": request.prediction_date,
                 "is_unhealthy": is_unhealthy_pred,
                 "probability": probability,
+                "concentration": float(estimated_conc),
                 "aqi_value": aqi_value,
                 "category": category_info["name"] if category_info else None,
                 "health_implications": category_info["health_implications"] if category_info else None,

@@ -61,6 +61,7 @@ class PredictionResponse(BaseModel):
     date: date
     is_unhealthy: bool
     probability: Optional[float] = None
+    concentration: Optional[float] = None  # Actual pollutant concentration (predicted or estimated)
     aqi_value: Optional[int] = None
     category: Optional[str] = None
     health_implications: Optional[str] = None

@@ -737,3 +737,72 @@ class AQIApp:
             logger.info(f"Split data saved to {os.path.dirname(train_filename)}")
         
         return train_df, validation_df, test_df 
+    
+    def prepare_features(self, noaa_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Prepare features for prediction by adding derived features and ensuring all 
+        necessary columns are present.
+        
+        Args:
+            noaa_df: DataFrame with NOAA weather data
+            
+        Returns:
+            DataFrame with prepared features ready for prediction
+        """
+        logger.info("Preparing features for prediction")
+        input_df = noaa_df.copy()
+        
+        # Add derived features
+        if 'TEMP_RANGE' not in input_df.columns and 'MAX' in input_df.columns and 'MIN' in input_df.columns:
+            input_df['TEMP_RANGE'] = input_df['MAX'] - input_df['MIN']
+            logger.info("Added TEMP_RANGE feature")
+        
+        if 'TEMP_AVG' not in input_df.columns and 'MAX' in input_df.columns and 'MIN' in input_df.columns:
+            input_df['TEMP_AVG'] = (input_df['MAX'] + input_df['MIN']) / 2
+            logger.info("Added TEMP_AVG feature")
+        
+        if 'TEMP_DEWP_DIFF' not in input_df.columns and 'TEMP_AVG' in input_df.columns and 'DEWP' in input_df.columns:
+            input_df['TEMP_DEWP_DIFF'] = input_df['TEMP_AVG'] - input_df['DEWP']
+            logger.info("Added TEMP_DEWP_DIFF feature")
+        
+        if 'WDSP_TEMP' not in input_df.columns and 'WDSP' in input_df.columns and 'TEMP_AVG' in input_df.columns:
+            input_df['WDSP_TEMP'] = input_df['WDSP'] * input_df['TEMP_AVG']
+            logger.info("Added WDSP_TEMP feature")
+        
+        # Add date-related features
+        if 'DATE' in input_df.columns:
+            # Convert to datetime if not already
+            if input_df['DATE'].dtype != 'datetime64[ns]':
+                input_df['DATE'] = pd.to_datetime(input_df['DATE'])
+                logger.info("Converted DATE to datetime")
+            
+            # Add month and day of week
+            if 'MONTH' not in input_df.columns:
+                input_df['MONTH'] = input_df['DATE'].dt.month
+                logger.info("Added MONTH feature")
+            
+            if 'DAYOFWEEK' not in input_df.columns:
+                input_df['DAYOFWEEK'] = input_df['DATE'].dt.dayofweek
+                logger.info("Added DAYOFWEEK feature")
+        
+        # Add season if not present
+        if 'SEASON' not in input_df.columns and 'MONTH' in input_df.columns:
+            season_map = {
+                1: 'Winter', 2: 'Winter', 3: 'Spring', 
+                4: 'Spring', 5: 'Spring', 6: 'Summer',
+                7: 'Summer', 8: 'Summer', 9: 'Fall', 
+                10: 'Fall', 11: 'Fall', 12: 'Winter'
+            }
+            input_df['SEASON'] = input_df['MONTH'].map(season_map)
+            logger.info("Added SEASON feature")
+        
+        # Add missing attribute columns that may be needed by the model
+        for attr_col in ['TEMP_ATTRIBUTES', 'DEWP_ATTRIBUTES', 'SLP_ATTRIBUTES', 
+                         'STP_ATTRIBUTES', 'VISIB_ATTRIBUTES', 'WDSP_ATTRIBUTES', 
+                         'MAX_ATTRIBUTES', 'MIN_ATTRIBUTES', 'PRCP_ATTRIBUTES']:
+            if attr_col not in input_df.columns:
+                input_df[attr_col] = '0'
+                logger.info(f"Added missing {attr_col} column")
+        
+        logger.info(f"Feature preparation complete. DataFrame shape: {input_df.shape}")
+        return input_df 

@@ -12,7 +12,12 @@ from autogluon.tabular import TabularPredictor
 from autogluon.common import space
 
 from .air_quality import AQScenario
-from ..config.settings import MODEL_DIR, DEFAULT_ML_TARGET_LABEL
+from ..config.settings import (
+    MODEL_DIR, 
+    DEFAULT_ML_TARGET_LABEL, 
+    REGRESSION_TARGET_LABELS, 
+    DEFAULT_REGRESSION_EVAL_METRIC
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +26,36 @@ class ModelTrainer:
     """
     Trains and manages AutoGluon models for AQI prediction.
     """
-    def __init__(self, scenario: AQScenario, target_label: str = DEFAULT_ML_TARGET_LABEL):
+    def __init__(
+        self, 
+        scenario: AQScenario, 
+        target_label: str = DEFAULT_ML_TARGET_LABEL,
+        is_regression: bool = False
+    ):
         """
         Initialize the model trainer.
         
         Args:
             scenario: AQ scenario to use for training
-            target_label: ML target label (classification target)
+            target_label: ML target label (classification or regression target)
+            is_regression: Whether the model is a regression model 
         """
         self.scenario = scenario
         self.target_label = target_label
-        self.model_path = os.path.join(MODEL_DIR, f"aq_{scenario.name}_{scenario.year_start}-{scenario.year_end}")
+        self.is_regression = is_regression
+        
+        # For regression models, include the parameter name in the model path
+        if is_regression:
+            self.model_path = os.path.join(
+                MODEL_DIR, 
+                f"aq_{scenario.name}_{scenario.year_start}-{scenario.year_end}_regression_{target_label}"
+            )
+        else:
+            self.model_path = os.path.join(
+                MODEL_DIR, 
+                f"aq_{scenario.name}_{scenario.year_start}-{scenario.year_end}"
+            )
+        
         self._predictor = None  # Cache for the loaded model
         self._model_loaded = False  # Flag to track if model is loaded
         
@@ -65,88 +89,138 @@ class ModelTrainer:
             logger.error(f"Target label '{self.target_label}' not found in training data")
             raise ValueError(f"Target label '{self.target_label}' not found in training data")
         
-        # Check if the target variable has enough unique values
-        unique_values = train_df[self.target_label].unique()
-        if len(unique_values) < 2:
-            logger.warning(f"Target variable '{self.target_label}' only contains one unique value: {unique_values}")
-            logger.warning("Creating synthetic data to enable binary classification...")
+        # Handle regression vs classification differently
+        if self.is_regression:
+            logger.info(f"Training regression model to predict {self.target_label}")
             
-            # Determine which class is missing (assuming binary classification with 0/1)
-            if 0 in unique_values and 1 not in unique_values:
-                missing_class = 1  # All data points are healthy (0), need to create unhealthy (1)
-                existing_class = 0
-            elif 1 in unique_values and 0 not in unique_values:
-                missing_class = 0  # All data points are unhealthy (1), need to create healthy (0)
-                existing_class = 1
-            else:
-                logger.error("Unexpected target variable values")
-                raise ValueError(f"Unexpected target variable values: {unique_values}")
+            # Default hyperparameters for regression if not provided
+            hyperparameters = kwargs.get("hyperparameters", {
+                'GBM': {
+                       'num_boost_round': 100,
+                       'num_leaves': space.Int(lower=26, upper=66, default=36),
+                },
+                'RF': {},
+                'XGB': {},
+                'CAT': {},
+                'NN_TORCH': {
+                    'num_epochs': 50,
+                    'learning_rate': space.Real(1e-4, 1e-2, default=1e-3, log=True),
+                    'activation': space.Categorical('relu', 'softrelu', 'tanh'),
+                    'dropout_prob': space.Real(0.0, 0.5, default=0.1),
+                },
+                'FASTAI': {}
+            })
             
-            # Create synthetic examples for the missing class
-            synthetic_count = min(10, len(train_df))  # Create a small number of synthetic examples
+            # Default problem type for air quality regression
+            problem_type = "regression"
             
-            # Copy some existing rows and change their target value
-            synthetic_rows = train_df.sample(synthetic_count, replace=False).copy()
-            synthetic_rows[self.target_label] = missing_class
+            # Default eval metric for regression
+            eval_metric = kwargs.get("eval_metric", DEFAULT_REGRESSION_EVAL_METRIC)
             
-            # If creating unhealthy examples, modify some features to make them more realistic
-            if missing_class == 1:  # Creating unhealthy examples
-                # For air quality data, adjust relevant weather features
-                if 'TEMP_AVG' in synthetic_rows.columns:
-                    # Higher temperatures often correlate with worse air quality
-                    synthetic_rows['TEMP_AVG'] = synthetic_rows['TEMP_AVG'] * 1.2
+        else:
+            # Check if the target variable has enough unique values for classification
+            unique_values = train_df[self.target_label].unique()
+            if len(unique_values) < 2:
+                logger.warning(f"Target variable '{self.target_label}' only contains one unique value: {unique_values}")
+                logger.warning("Creating synthetic data to enable binary classification...")
                 
-                if 'WDSP' in synthetic_rows.columns:
-                    # Lower wind speeds often correlate with worse air quality
-                    synthetic_rows['WDSP'] = synthetic_rows['WDSP'] * 0.7
+                # Determine which class is missing (assuming binary classification with 0/1)
+                if 0 in unique_values and 1 not in unique_values:
+                    missing_class = 1  # All data points are healthy (0), need to create unhealthy (1)
+                    existing_class = 0
+                elif 1 in unique_values and 0 not in unique_values:
+                    missing_class = 0  # All data points are unhealthy (1), need to create healthy (0)
+                    existing_class = 1
+                else:
+                    logger.error("Unexpected target variable values")
+                    raise ValueError(f"Unexpected target variable values: {unique_values}")
+                
+                # Create synthetic examples for the missing class
+                synthetic_count = min(10, len(train_df))  # Create a small number of synthetic examples
+                
+                # Copy some existing rows and change their target value
+                synthetic_rows = train_df.sample(synthetic_count, replace=False).copy()
+                synthetic_rows[self.target_label] = missing_class
+                
+                # If creating unhealthy examples, modify some features to make them more realistic
+                if missing_class == 1:  # Creating unhealthy examples
+                    # For air quality data, adjust relevant weather features
+                    if 'TEMP_AVG' in synthetic_rows.columns:
+                        # Higher temperatures often correlate with worse air quality
+                        synthetic_rows['TEMP_AVG'] = synthetic_rows['TEMP_AVG'] * 1.2
+                    
+                    if 'WDSP' in synthetic_rows.columns:
+                        # Lower wind speeds often correlate with worse air quality
+                        synthetic_rows['WDSP'] = synthetic_rows['WDSP'] * 0.7
+                
+                # Combine original and synthetic data
+                augmented_train_df = pd.concat([train_df, synthetic_rows], ignore_index=True)
+                
+                # Also add synthetic examples to validation data
+                if not validation_df.empty:
+                    synthetic_val_rows = validation_df.sample(
+                        min(5, len(validation_df)), replace=False
+                    ).copy()
+                    synthetic_val_rows[self.target_label] = missing_class
+                    augmented_validation_df = pd.concat(
+                        [validation_df, synthetic_val_rows], ignore_index=True
+                    )
+                else:
+                    augmented_validation_df = validation_df
+                
+                logger.info(f"Created {synthetic_count} synthetic examples for class {missing_class}")
+                logger.info(f"Augmented training data shape: {augmented_train_df.shape}")
+                
+                # Use the augmented data for training
+                train_df = augmented_train_df
+                validation_df = augmented_validation_df
             
-            # Combine original and synthetic data
-            augmented_train_df = pd.concat([train_df, synthetic_rows], ignore_index=True)
+            # Default hyperparameters for classification if not provided
+            hyperparameters = kwargs.get("hyperparameters", {
+                'GBM': {
+                       'num_boost_round': 100,  # number of boosting rounds (controls training time of GBM models)
+                       'num_leaves': space.Int(lower=26, upper=66, default=36),  # number of leaves in trees (integer hyperparameter)
+                },
+                'RF': {
+                    'n_estimators': space.Int(lower=100, upper=500, default=200),
+                    'max_depth': space.Int(lower=3, upper=10, default=6),
+                    'min_samples_split': space.Int(lower=2, upper=10, default=5),
+                    'min_samples_leaf': space.Int(lower=1, upper=5, default=2),
+                    'max_features': space.Real(0.1, 1.0, default=0.5),
+                    'bootstrap': space.Categorical(True, False),
+                },
+                'XGB': {
+                    'num_boost_round': 100,
+                    'max_depth': space.Int(lower=3, upper=10, default=6),
+                    'learning_rate': space.Real(1e-4, 1e-2, default=1e-3, log=True),
+                    'subsample': space.Real(0.5, 1.0, default=0.8),
+                    'colsample_bytree': space.Real(0.5, 1.0, default=0.8),
+                    'reg_alpha': space.Real(0.0, 1.0, default=0.0),
+                    'reg_lambda': space.Real(0.0, 1.0, default=1.0),
+                },
+                'CAT': {
+                    'num_trees': space.Int(lower=100, upper=500, default=200),
+                    'max_depth': space.Int(lower=3, upper=10, default=6),
+                    'learning_rate': space.Real(1e-4, 1e-2, default=1e-3, log=True),
+                    'l2_leaf_reg': space.Real(0.0, 1.0, default=1.0),
+                    'random_strength': space.Real(0.0, 1.0, default=0.5),
+                },
+                'NN_TORCH': {
+                    'num_epochs': 50,  # number of training epochs (controls training time of NN models)
+                    'learning_rate': space.Real(1e-4, 1e-2, default=1e-3, log=True),  # learning rate used in training (real-valued hyperparameter searched on log-scale)
+                    'activation': space.Categorical('relu', 'softrelu', 'tanh'),  # activation function used in NN (categorical hyperparameter, default = first entry)
+                    'dropout_prob': space.Real(0.0, 0.5, default=0.1),  # dropout probability (real-valued hyperparameter)
+                }
+            })
             
-            # Also add synthetic examples to validation data
-            if not validation_df.empty:
-                synthetic_val_rows = validation_df.sample(
-                    min(5, len(validation_df)), replace=False
-                ).copy()
-                synthetic_val_rows[self.target_label] = missing_class
-                augmented_validation_df = pd.concat(
-                    [validation_df, synthetic_val_rows], ignore_index=True
-                )
-            else:
-                augmented_validation_df = validation_df
+            # Default problem type for air quality classification
+            problem_type = kwargs.get("problem_type", "binary")
             
-            logger.info(f"Created {synthetic_count} synthetic examples for class {missing_class}")
-            logger.info(f"Augmented training data shape: {augmented_train_df.shape}")
-            
-            # Use the augmented data for training
-            train_df = augmented_train_df
-            validation_df = augmented_validation_df
-        
-        # Default hyperparameters if not provided
-        hyperparameters = kwargs.get("hyperparameters", {
-            'GBM': {
-                   'num_boost_round': 100,  # number of boosting rounds (controls training time of GBM models)
-                   'num_leaves': space.Int(lower=26, upper=66, default=36),  # number of leaves in trees (integer hyperparameter)
-            },
-            'RF': {},
-            'XGB': {},
-            'CAT': {},
-            'NN_TORCH': {
-                'num_epochs': 50,  # number of training epochs (controls training time of NN models)
-                'learning_rate': space.Real(1e-4, 1e-2, default=1e-3, log=True),  # learning rate used in training (real-valued hyperparameter searched on log-scale)
-                'activation': space.Categorical('relu', 'softrelu', 'tanh'),  # activation function used in NN (categorical hyperparameter, default = first entry)
-                'dropout_prob': space.Real(0.0, 0.5, default=0.1),  # dropout probability (real-valued hyperparameter)
-            },
-            'FASTAI': {}
-        })
-        
-        # Default problem type for air quality classification
-        problem_type = kwargs.get("problem_type", "binary")
-        
-        # Default eval metric
-        eval_metric = kwargs.get("eval_metric", "accuracy")
+            # Default eval metric for classification
+            eval_metric = kwargs.get("eval_metric", "accuracy")
         
         logger.info(f"Training model for scenario: {self.scenario.name}")
+        logger.info(f"Target label: {self.target_label}, Problem type: {problem_type}")
         logger.info(f"Training data shape: {train_df.shape}")
         logger.info(f"Validation data shape: {validation_df.shape}")
         logger.info(f"Model will be saved to: {self.model_path}")
@@ -164,12 +238,25 @@ class ModelTrainer:
                 eval_metric=eval_metric
             )
             
-            # Train with timeout
+            search_strategy = 'auto'  # to tune hyperparameters using random search routine with a local scheduler
+            hyperparameter_tune_kwargs = {  # HPO is not performed unless hyperparameter_tune_kwargs is specified
+                'num_trials': 10,  # Number of HPO trials
+                'scheduler' : 'local',
+                'searcher': search_strategy,
+            }  # Refer to TabularPredictor.fit docstring for all valid values
+
+            # Train with timeout and k-fold cross validation
             predictor.fit(
+                auto_stack=True,
                 train_data=train_df,
                 tuning_data=validation_df,
                 time_limit=time_limit_secs,
-                hyperparameters=hyperparameters
+                hyperparameters=hyperparameters,
+                hyperparameter_tune_kwargs=hyperparameter_tune_kwargs,
+                num_bag_folds=5,  # Enable 5-fold cross validation
+                num_bag_sets=1,  # Number of times to repeat k-fold bagging
+                verbosity=3,
+                use_bag_holdout=True  # Allow validation data with bagging
             )
             
             # Generate feature importance
@@ -248,60 +335,77 @@ class ModelTrainer:
         """
         logger.info("Starting prediction process...")
         
-        if not self._model_loaded or self._predictor is None:
-            logger.info("Loading model...")
-            self._predictor = self.load_model()
+        if data.empty:
+            logger.warning("No data provided for prediction")
+            return pd.DataFrame()
         
-        if self._predictor is None:
-            logger.error("Cannot make predictions: model not found")
-            raise ValueError("Model not found")
+        # Load model if not already loaded
+        predictor = self.load_model()
+        if predictor is None:
+            logger.error("No model found for prediction")
+            return pd.DataFrame()
         
         try:
-            # Check if we need to add missing columns required by the model
-            if hasattr(self._predictor, 'features'):
-                logger.info("Checking required features...")
-                required_features = self._predictor.features()
-                # Find missing columns
-                missing_columns = [col for col in required_features if col not in data.columns]
-                if missing_columns:
-                    logger.error(f"Missing required features for prediction: {missing_columns}")
-                    raise ValueError(f"Missing required features for prediction: {missing_columns}")
-            
-            # Handle version differences with feature preprocessing
-            try:
-                logger.info("Preprocessing features...")
-                # Some versions have transform_features method
-                if hasattr(self._predictor, 'transform_features'):
-                    data = self._predictor.transform_features(data)
-                    logger.info("Feature transformation completed")
-                else:
-                    logger.info("No feature transformation needed")
-            except Exception as e:
-                logger.warning(f"Could not transform features: {str(e)}. Using raw features.")
-            
-            # Make predictions with minimal memory usage
-            logger.info("Making predictions...")
-            try:
-                predictions = self._predictor.predict(data)
-                logger.info("Getting prediction probabilities...")
-                probabilities = self._predictor.predict_proba(data)
+            # Make predictions
+            if self.is_regression:
+                # For regression models, we want the actual predicted values
+                logger.info(f"Making regression predictions for {self.target_label}")
+                predictions = predictor.predict(data)
                 
-                # Create result DataFrame
-                logger.info("Creating result DataFrame...")
-                result = pd.DataFrame({
-                    'prediction': predictions,
-                    'probability_unhealthy': probabilities[1] if len(probabilities.shape) > 1 else probabilities
+                # Create results dataframe
+                results = pd.DataFrame({f"{self.target_label}_predicted": predictions})
+                
+                # Add prediction uncertainty if available
+                try:
+                    prediction_intervals = predictor.predict_quantile(data, quantiles=[0.1, 0.9])
+                    results[f"{self.target_label}_lower_bound"] = prediction_intervals[0.1]
+                    results[f"{self.target_label}_upper_bound"] = prediction_intervals[0.9]
+                    logger.info("Added prediction uncertainty intervals")
+                except Exception as e:
+                    logger.warning(f"Could not generate prediction intervals: {str(e)}")
+                
+                # Add EPA AQI category for the pollutant values if this is a major pollutant
+                param_name = self.target_label.split('_')[0] if '_value' in self.target_label else None
+                if param_name and param_name in ['pm25', 'pm10', 'o3']:
+                    try:
+                        from ..config.settings import UNHEALTHY_THRESHOLDS
+                        threshold = UNHEALTHY_THRESHOLDS.get(param_name, 35.5)
+                        results['isUnhealthy_predicted'] = np.where(results[f"{self.target_label}_predicted"] > threshold, 1, 0)
+                        logger.info(f"Added isUnhealthy classification using threshold {threshold} for {param_name}")
+                    except Exception as e:
+                        logger.warning(f"Could not add isUnhealthy classification: {str(e)}")
+                
+            else:
+                # For classification models, get both class and probability
+                logger.info("Making classification predictions")
+                predictions = predictor.predict(data)
+                prediction_probs = predictor.predict_proba(data)
+                
+                # Get the probability of the positive class (unhealthy)
+                positive_class_name = '1'  # Assuming binary classification with 1 = unhealthy
+                try:
+                    if positive_class_name in prediction_probs.columns:
+                        unhealthy_probs = prediction_probs[positive_class_name]
+                    else:
+                        # If column names are not as expected, just take the second column
+                        # (typical for binary classification where the second column is positive class)
+                        unhealthy_probs = prediction_probs.iloc[:, 1]
+                except Exception as e:
+                    logger.warning(f"Could not extract positive class probabilities: {str(e)}")
+                    unhealthy_probs = pd.Series([0.5] * len(predictions))  # Default fallback
+                
+                # Create results dataframe
+                results = pd.DataFrame({
+                    'isUnhealthy_predicted': predictions,
+                    'unhealthy_probability': unhealthy_probs
                 })
-                
-                logger.info("Prediction process completed successfully")
-                return result
-            except Exception as e:
-                logger.error(f"Error during prediction step: {str(e)}")
-                raise
+            
+            logger.info("Prediction completed successfully")
+            return results
             
         except Exception as e:
             logger.error(f"Error during prediction: {str(e)}")
-            raise
+            return pd.DataFrame()
     
     def get_model_info(self) -> Dict[str, Any]:
         """

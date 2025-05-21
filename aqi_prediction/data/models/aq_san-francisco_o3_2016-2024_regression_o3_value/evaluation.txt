@@ -1,0 +1,1 @@
+{'root_mean_squared_error': np.float64(-0.014374201641678783), 'mean_squared_error': -0.000206617672835641, 'mean_absolute_error': -0.012482979086493989, 'r2': -0.0027838101535924142, 'pearsonr': 0.010649623483057234, 'median_absolute_error': np.float64(-0.0122444065745459)}

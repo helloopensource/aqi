@@ -11,6 +11,8 @@ This project implements a system to predict air quality using weather data from 
 - Data collection from NOAA GSOD and OpenAQ
 - Feature engineering for weather data
 - Machine learning model training using AutoGluon
+- Classification models for AQI category prediction (healthy/unhealthy)
+- Regression models for predicting actual pollutant values (PM2.5, PM10, O3)
 - REST API for model training and predictions
 - AQI calculation according to EPA standards
 - Support for multiple air quality parameters (PM2.5, PM10, etc.)
@@ -52,13 +54,52 @@ python main.py
 
 This will start the FastAPI server on http://localhost:8000 by default.
 
+### Training Models
+
+#### Classification Model
+
+To train a classification model that predicts whether air quality is healthy or unhealthy:
+
+```bash
+python scripts/train_model.py --scenario los-angeles_pm25 --time-limit 900 --metric accuracy
+```
+
+#### Regression Model
+
+To train a regression model that predicts actual pollutant values:
+
+```bash
+python scripts/train_regression_model.py --scenario los-angeles_pm25 --target pm25_value --time-limit 900
+```
+
+Available targets for regression models:
+- `pm25_value`: Predict actual PM2.5 concentration (μg/m³)
+- `pm10_value`: Predict actual PM10 concentration (μg/m³)
+- `o3_value`: Predict actual ozone concentration (ppm)
+
+### Making Predictions
+
+#### Classification Predictions
+
+```bash
+python scripts/predict.py --scenario los-angeles_pm25 --days 7
+```
+
+#### Regression Predictions
+
+```bash
+python scripts/predict_regression.py --scenario los-angeles_pm25 --target pm25_value --days 7 --output-file predictions.csv
+```
+
 ### API Documentation
 
 Once the server is running, you can access the API documentation at:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
-### Training a Model
+### API Examples
+
+#### Training a Model
 
 To train a model for a specific scenario:
 
@@ -66,7 +107,7 @@ To train a model for a specific scenario:
 curl -X POST "http://localhost:8000/api/v1/train/los-angeles_pm25?time_limit_secs=900&eval_metric=f1"
 ```
 
-### Making Predictions
+#### Making Predictions
 
 To make a prediction using a trained model:
 
@@ -126,6 +167,11 @@ aqi_prediction/
 │   ├── models/            # ML model definitions
 │   └── utils/             # Utility functions
 ├── tests/                 # Test modules
+├── scripts/               # Command-line scripts
+│   ├── train_model.py     # Train classification models
+│   ├── train_regression_model.py # Train regression models
+│   ├── predict.py         # Make classification predictions
+│   └── predict_regression.py # Make regression predictions
 ├── .env                   # Environment variables
 ├── main.py                # Application entry point
 └── requirements.txt       # Project dependencies

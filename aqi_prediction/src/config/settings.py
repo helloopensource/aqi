@@ -30,6 +30,10 @@ DEFAULT_ML_TARGET_LABEL = "isUnhealthy"
 DEFAULT_ML_EVAL_METRIC = "accuracy"
 DEFAULT_ML_TIME_LIMIT_SECS = 300  # 5 minutes
 
+# Regression model settings
+REGRESSION_TARGET_LABELS = ["pm25_value", "pm10_value", "o3_value"]
+DEFAULT_REGRESSION_EVAL_METRIC = "root_mean_squared_error"
+
 # AQI settings - EPA Breakpoints for PM2.5 (μg/m³, 24-hour average)
 AQI_BREAKPOINTS = {
     "pm25": {
