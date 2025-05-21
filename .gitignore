@@ -4,3 +4,4 @@ experiments/.env
 experiment/.venv
 aqi_prediction_fe/node_modules
 aqi_prediction_fe/.next
+aqi_prediction/TROUBLESHOOTING.md

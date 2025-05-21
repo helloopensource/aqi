@@ -1,1 +1,0 @@
-{'f1': 0.6666666666666666, 'accuracy': 0.9973821989528796, 'balanced_accuracy': np.float64(0.75), 'mcc': np.float64(0.7061782098323304), 'roc_auc': np.float64(0.925), 'precision': 1.0, 'recall': 0.5}

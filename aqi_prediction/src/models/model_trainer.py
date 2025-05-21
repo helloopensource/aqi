@@ -339,24 +339,86 @@ class ModelTrainer:
             logger.warning("No data provided for prediction")
             return pd.DataFrame()
         
+        # Log data shape and columns for debugging
+        logger.info(f"Input data shape: {data.shape}")
+        logger.info(f"Input data columns: {data.columns.tolist()}")
+        
         # Load model if not already loaded
+        logger.info("Loading model...")
         predictor = self.load_model()
         if predictor is None:
             logger.error("No model found for prediction")
             return pd.DataFrame()
         
         try:
-            # Make predictions
-            if self.is_regression:
-                # For regression models, we want the actual predicted values
-                logger.info(f"Making regression predictions for {self.target_label}")
-                predictions = predictor.predict(data)
+            # Log model features for comparison
+            model_features = predictor.features() if hasattr(predictor, 'features') else []
+            logger.info(f"Model features: {model_features}")
+            
+            # Check for missing required features
+            if hasattr(predictor, 'features'):
+                missing_features = [f for f in predictor.features() if f not in data.columns and f != self.target_label]
+                if missing_features:
+                    logger.warning(f"Missing features in input data: {missing_features}")
+                    # Add missing features with default values
+                    for feature in missing_features:
+                        logger.info(f"Adding missing feature {feature} with default value 0")
+                        data[feature] = 0
+            
+            # Make predictions - optimize the prediction process
+            logger.info("Making actual prediction call...")
+            # Use a smaller dataset for faster predictions if possible
+            if data.shape[0] > 100:
+                logger.info(f"Large dataset detected ({data.shape[0]} rows). Using batch processing.")
+                batch_size = 100
+                num_batches = (data.shape[0] + batch_size - 1) // batch_size
+                predictions_list = []
+                proba_list = []
                 
-                # Create results dataframe
+                for i in range(num_batches):
+                    start_idx = i * batch_size
+                    end_idx = min((i + 1) * batch_size, data.shape[0])
+                    batch_data = data.iloc[start_idx:end_idx]
+                    
+                    logger.info(f"Processing batch {i+1}/{num_batches} (rows {start_idx+1}-{end_idx})")
+                    if self.is_regression:
+                        batch_preds = predictor.predict(batch_data)
+                        predictions_list.append(batch_preds)
+                    else:
+                        batch_preds = predictor.predict(batch_data)
+                        batch_proba = predictor.predict_proba(batch_data)
+                        predictions_list.append(batch_preds)
+                        proba_list.append(batch_proba)
+                
+                if self.is_regression:
+                    # Combine regression predictions
+                    predictions = pd.concat(predictions_list, ignore_index=True)
+                else:
+                    # Combine classification predictions
+                    predictions = pd.concat(predictions_list, ignore_index=True)
+                    prediction_probs = pd.concat(proba_list, ignore_index=True)
+            else:
+                # Small dataset, predict all at once
+                if self.is_regression:
+                    # For regression models, we want the actual predicted values
+                    logger.info(f"Making regression predictions for {self.target_label}")
+                    predictions = predictor.predict(data)
+                else:
+                    # For classification models, get both class and probability
+                    logger.info("Making classification predictions")
+                    predictions = predictor.predict(data)
+                    prediction_probs = predictor.predict_proba(data)
+            
+            logger.info("Prediction completed successfully")
+            
+            # Create results dataframe based on model type
+            if self.is_regression:
+                # For regression models
                 results = pd.DataFrame({f"{self.target_label}_predicted": predictions})
                 
                 # Add prediction uncertainty if available
                 try:
+                    logger.info("Adding prediction intervals...")
                     prediction_intervals = predictor.predict_quantile(data, quantiles=[0.1, 0.9])
                     results[f"{self.target_label}_lower_bound"] = prediction_intervals[0.1]
                     results[f"{self.target_label}_upper_bound"] = prediction_intervals[0.9]
@@ -374,13 +436,8 @@ class ModelTrainer:
                         logger.info(f"Added isUnhealthy classification using threshold {threshold} for {param_name}")
                     except Exception as e:
                         logger.warning(f"Could not add isUnhealthy classification: {str(e)}")
-                
             else:
-                # For classification models, get both class and probability
-                logger.info("Making classification predictions")
-                predictions = predictor.predict(data)
-                prediction_probs = predictor.predict_proba(data)
-                
+                # For classification models
                 # Get the probability of the positive class (unhealthy)
                 positive_class_name = '1'  # Assuming binary classification with 1 = unhealthy
                 try:
@@ -400,11 +457,14 @@ class ModelTrainer:
                     'unhealthy_probability': unhealthy_probs
                 })
             
-            logger.info("Prediction completed successfully")
+            logger.info(f"Prediction result shape: {results.shape}")
+            logger.info(f"Prediction result columns: {results.columns.tolist()}")
             return results
             
         except Exception as e:
             logger.error(f"Error during prediction: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return pd.DataFrame()
     
     def get_model_info(self) -> Dict[str, Any]:

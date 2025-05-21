@@ -140,10 +140,25 @@ def main():
             try:
                 input_df = app.prepare_features(noaa_df)
                 
-                # Add the isUnhealthy column which is required by the model but not used for prediction
+                # Add the isUnhealthy column which is required by the model
                 if 'isUnhealthy' not in input_df.columns:
                     logger.info("Adding required 'isUnhealthy' column with default value 0")
                     input_df['isUnhealthy'] = 0  # Default to healthy
+                
+                # Handle missing categorical features - ensure SEASON is a string not a float/int
+                if 'SEASON' in input_df.columns and not isinstance(input_df['SEASON'].iloc[0], str):
+                    season_map = {
+                        1: 'Winter', 2: 'Winter', 3: 'Spring', 
+                        4: 'Spring', 5: 'Spring', 6: 'Summer',
+                        7: 'Summer', 8: 'Summer', 9: 'Fall', 
+                        10: 'Fall', 11: 'Fall', 12: 'Winter'
+                    }
+                    input_df['SEASON'] = input_df['SEASON'].map(season_map)
+                    
+                # Handle attribute columns that should be strings
+                for col in input_df.columns:
+                    if col.endswith('_ATTRIBUTES') and not isinstance(input_df[col].iloc[0], str):
+                        input_df[col] = input_df[col].astype(str)
                 
             except AttributeError:
                 # If prepare_features doesn't exist, create a simple version here

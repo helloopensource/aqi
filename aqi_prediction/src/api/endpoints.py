@@ -260,14 +260,15 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
             predict_func = lambda: trainer.predict(data)
             result = await asyncio.wait_for(
                 run_in_threadpool(predict_func),
-                timeout=10.0  # 10 second timeout for prediction
+                timeout=30.0  # 30 second timeout for prediction, increased based on debug results
             )
             
             logger.info("Prediction completed, processing results...")
             
             # Log result structure for debugging
-            logger.debug(f"Prediction result columns: {result.columns.tolist()}")
-            logger.debug(f"Prediction result first row: {result.iloc[0].to_dict()}")
+            logger.debug(f"Prediction result shape: {result.shape if not result.empty else 'empty'}")
+            logger.debug(f"Prediction result columns: {result.columns.tolist() if not result.empty else []}")
+            logger.debug(f"Prediction result first row: {result.iloc[0].to_dict() if not result.empty else {}}")
             
             # Get prediction from result
             try:
