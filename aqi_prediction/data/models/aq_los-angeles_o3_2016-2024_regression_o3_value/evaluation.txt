@@ -1,1 +1,1 @@
-{'root_mean_squared_error': np.float64(-0.01422822992407764), 'mean_squared_error': -0.0002024425267724184, 'mean_absolute_error': -0.012269269354186525, 'r2': 0.00663243922014356, 'pearsonr': 0.08314107750663485, 'median_absolute_error': np.float64(-0.012244555045847975)}
+{'root_mean_squared_error': np.float64(-0.014066477936584231), 'mean_squared_error': -0.00019786580154041095, 'mean_absolute_error': -0.012114199049017112, 'r2': -0.002070070063360241, 'pearsonr': 0.004935568388699983, 'median_absolute_error': np.float64(-0.012012606503505994)}
